@@ -1,43 +1,67 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Inventory Status</title>
+  <meta charset="UTF-8">
+  <title>LBC Inventory</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 8px;
-      text-align: left;
-    }
-    th {
-      background-color: #f2f2f2;
-    }
+    body { font-family: Arial; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 6px; }
+    th { background: #f2f2f2; }
+    input { margin-bottom: 10px; padding: 6px; width: 300px; }
   </style>
 </head>
 <body>
 
-<h2>Current Inventory</h2>
-<p>Last updated: <span id="lastUpdated"></span></p>
+<h2>LBC Inventory</h2>
+<p>Last updated automatically from SAP export</p>
+
+<input type="text" id="search" placeholder="Search part number..." onkeyup="filterTable()">
 
 <table id="inventoryTable">
   <thead>
     <tr>
-      <th>Item</th>
-      <th>SKU</th>
+      <th>Material</th>
+      <th>Part Number</th>
+      <th>Location</th>
       <th>Available Qty</th>
     </tr>
   </thead>
   <tbody></tbody>
 </table>
 
-<script src="inventory.js"></script>
+<script>
+fetch('inventory.csv')
+  .then(response => response.text())
+  .then(data => {
+    const rows = data.split('\n').slice(2); // skip title + header
+    const tbody = document.querySelector('#inventoryTable tbody');
+
+    rows.forEach(row => {
+      const cols = row.split(',');
+      if (cols.length < 5) return;
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${cols[1]}</td>
+        <td>${cols[2]}</td>
+        <td>${cols[3]}</td>
+        <td>${cols[4]}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  });
+
+function filterTable() {
+  const input = document.getElementById('search').value.toLowerCase();
+  const rows = document.querySelectorAll('#inventoryTable tbody tr');
+
+  rows.forEach(row => {
+    row.style.display = row.innerText.toLowerCase().includes(input)
+      ? '' : 'none';
+  });
+}
+</script>
 
 </body>
 </html>
