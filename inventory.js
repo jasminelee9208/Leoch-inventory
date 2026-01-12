@@ -1,4 +1,4 @@
-fetch('inventory.json')
+fetch('inventory')
   .then(response => response.json())
   .then(data => {
     const tableBody = document.querySelector("#inventoryTable tbody");
