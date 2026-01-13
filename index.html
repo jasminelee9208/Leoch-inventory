@@ -14,7 +14,7 @@
 <body>
 
 <h2>LBC Inventory</h2>
-<p>Last updated automatically from SAP export</p>
+<p id="lastUpdated"></p>
 
 <input type="text" id="search" placeholder="Search part number..." onkeyup="filterTable()">
 
@@ -31,37 +31,62 @@
 </table>
 
 <script>
-fetch('inventory.csv')
-  .then(response => response.text())
-  .then(data => {
-    const rows = data.split('\n').slice(2); // skip title + header
-    const tbody = document.querySelector('#inventoryTable tbody');
+fetch("inventory.csv")
+  .then(res => res.text())
+  .then(text => {
+    const lines = text.split("\n").map(l => l.trim()).filter(l => l);
 
-    rows.forEach(row => {
-      const cols = row.split(',');
-      if (cols.length < 5) return;
+    // --- Extract date from first line ---
+    const dateMatch = lines[0].match(/(\d{2}\/\d{2}\/\d{4})/);
+    if (dateMatch) {
+      document.getElementById("lastUpdated").innerText =
+        `Last updated: ${dateMatch[1]}`;
+    }
 
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${cols[1]}</td>
-        <td>${cols[2]}</td>
-        <td>${cols[3]}</td>
-        <td>${cols[4]}</td>
-      `;
-      tbody.appendChild(tr);
+    // --- Find header row ---
+    const headerIndex = lines.findIndex(l => l.startsWith("Material,"));
+    const dataLines = lines.slice(headerIndex + 1);
+
+    const grouped = {};
+
+    dataLines.forEach(line => {
+      const cols = line.split(",");
+
+      // Read ONLY first 4 columns
+      const material = cols[0];
+      const part = cols[1];
+      const location = cols[2];
+
+      // Remove commas + quotes from quantity
+      let qty = cols[3].replace(/"/g, "").replace(/,/g, "");
+      qty = parseFloat(qty);
+
+      // Hide zero or invalid quantities
+      if (!qty || qty === 0) return;
+
+      if (!grouped[part]) grouped[part] = [];
+      grouped[part].push({ material, location, qty });
+    });
+
+    const tbody = document.querySelector("tbody");
+    tbody.innerHTML = "";
+
+    Object.keys(grouped).sort().forEach(part => {
+      grouped[part].forEach((row, i) => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+          <td>${i === 0 ? part : ""}</td>
+          <td>${row.location}</td>
+          <td>${row.qty.toLocaleString()}</td>
+        `;
+
+        tbody.appendChild(tr);
+      });
     });
   });
-
-function filterTable() {
-  const input = document.getElementById('search').value.toLowerCase();
-  const rows = document.querySelectorAll('#inventoryTable tbody tr');
-
-  rows.forEach(row => {
-    row.style.display = row.innerText.toLowerCase().includes(input)
-      ? '' : 'none';
-  });
-}
 </script>
+
 
 </body>
 </html>
