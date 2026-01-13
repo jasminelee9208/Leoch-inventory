@@ -84,42 +84,53 @@
 const locations = new Set();
 
 fetch("inventory.csv")
-  .then(response => response.text())
+  .then(res => res.text())
   .then(text => {
     const lines = text
       .split("\n")
       .map(l => l.trim())
       .filter(l => l.length);
 
-    // --- Extract date ---
-    const dateMatch = lines[0].match(/(\d{2}\/\d{2}\/\d{4})/);
-    if (dateMatch) {
-      document.getElementById("lastUpdated").innerText =
-        "Last updated: " + dateMatch[1];
+    // --- Extract date from anywhere ---
+    const dateLine = lines.find(l => l.includes("Inventory List"));
+    if (dateLine) {
+      const dateMatch = dateLine.match(/(\d{2}\/\d{2}\/\d{4})/);
+      if (dateMatch) {
+        document.getElementById("lastUpdated").innerText =
+          "Last updated: " + dateMatch[1];
+      }
     }
 
-    // --- Find header ---
-    const headerIndex = lines.findIndex(l =>
-      l.startsWith("Material,")
-    );
+    // --- Find header row (contains "Material") ---
+    const headerIndex = lines.findIndex(l => l.includes("Material"));
 
-    const dataLines = lines.slice(headerIndex + 1);
+    let headers = lines[headerIndex].split(",");
+    while (headers[0] === "") headers.shift();
+
+    const materialIdx = headers.indexOf("Material");
+    const partIdx     = headers.indexOf("Leoch Part Number");
+    const locationIdx = headers.indexOf("Sto.Loction");
+    const qtyIdx      = headers.indexOf("Qty.Avail");
+
     const tbody = document.querySelector("#inventoryTable tbody");
+    tbody.innerHTML = "";
 
-    dataLines.forEach(line => {
-      const cols = line.split(",");
+    lines.slice(headerIndex + 1).forEach(line => {
+      let cols = line.split(",");
 
-      const material = cols[0];
-      const part = cols[1];
-      const location = cols[2];
+      // --- Remove leading empty columns ---
+      while (cols.length && cols[0] === "") cols.shift();
 
-      let qty = cols[3]
-        .replace(/"/g, "")
+      const material = cols[materialIdx];
+      const part     = cols[partIdx];
+      const location = cols[locationIdx];
+
+      let qty = cols[qtyIdx]
+        ?.replace(/"/g, "")
         .replace(/,/g, "");
 
       qty = parseFloat(qty);
 
-      // Skip zero / invalid
       if (!qty || qty <= 0) return;
 
       locations.add(location);
@@ -131,7 +142,6 @@ fetch("inventory.csv")
         <td>${location}</td>
         <td>${qty.toLocaleString()}</td>
       `;
-
       tbody.appendChild(tr);
     });
 
@@ -140,45 +150,36 @@ fetch("inventory.csv")
 
 function populateLocationDropdown() {
   const select = document.getElementById("locationFilter");
+  select.innerHTML = `<option value="">All Locations</option>`;
 
   Array.from(locations)
     .sort()
     .forEach(loc => {
-      const option = document.createElement("option");
-      option.value = loc;
-      option.textContent = loc;
-      select.appendChild(option);
+      const opt = document.createElement("option");
+      opt.value = loc;
+      opt.textContent = loc;
+      select.appendChild(opt);
     });
 }
 
 function applyFilters() {
-  const searchValue = document
-    .getElementById("search")
-    .value
-    .toUpperCase();
+  const search = document.getElementById("search").value.toUpperCase();
+  const loc    = document.getElementById("locationFilter").value;
 
-  const selectedLocation =
-    document.getElementById("locationFilter").value;
+  document.querySelectorAll("#inventoryTable tbody tr")
+    .forEach(row => {
+      const part = row.cells[1].innerText.toUpperCase();
+      const rowLoc = row.cells[2].innerText;
 
-  const rows = document.querySelectorAll(
-    "#inventoryTable tbody tr"
-  );
+      const show =
+        part.includes(search) &&
+        (!loc || rowLoc === loc);
 
-  rows.forEach(row => {
-    const part = row.cells[1].innerText.toUpperCase();
-    const location = row.cells[2].innerText;
-
-    const matchesPart = part.includes(searchValue);
-    const matchesLocation =
-      !selectedLocation || location === selectedLocation;
-
-    row.classList.toggle(
-      "hidden",
-      !(matchesPart && matchesLocation)
-    );
-  });
+      row.classList.toggle("hidden", !show);
+    });
 }
 </script>
+
 
 </body>
 </html>
