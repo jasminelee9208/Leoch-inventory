@@ -103,6 +103,9 @@
 <script>
 const locations = new Set();
 
+/* ================================
+   CSV PARSER
+================================ */
 function parseCSVLine(line) {
   const result = [];
   let current = "";
@@ -125,15 +128,66 @@ function parseCSVLine(line) {
   return result.map(v => v.trim());
 }
 
+/* ================================
+   NORMALIZE PART NUMBER
+   (removes terminals like (T8))
+================================ */
+function normalizePart(part) {
+  if (!part) return "";
+  return part
+    .toUpperCase()
+    .replace(/\(.*?\)/g, "")   // remove anything in ()
+    .replace(/\s+/g, "")       // remove spaces
+    .trim();
+}
+
+/* ================================
+   EXTRACT VOLTAGE
+   Works for LP6-..., LP12-..., LDC8-..., etc.
+================================ */
+function extractVoltage(part) {
+  const clean = normalizePart(part);
+
+  const match = clean.match(/[A-Z]+(\d+)-/);
+  if (match) return parseFloat(match[1]);
+
+  return 0;
+}
+
+/* ================================
+   GROUP ORDER (MATCHES YOUR PDF)
+================================ */
+function getGroupPriority(part) {
+  const clean = normalizePart(part);
+
+  if (clean.startsWith("LP") || clean.startsWith("LPL")) return 1;       // General Purpose
+  if (clean.startsWith("LDC")) return 2;                                 // Deep Cycle AGM
+  if (clean.startsWith("LPX") || clean.startsWith("XP") || clean.startsWith("HXP")) return 3; // High Rate UPS
+  if (clean.startsWith("PLC")) return 4;                                 // Pure Lead + Carbon
+  if (clean.startsWith("LPF")) return 5;                                 // AGM Front Terminal
+  if (clean.startsWith("PLH")) return 6;                                 // Pure Lead Long Life
+  if (clean.startsWith("PLF")) return 7;                                 // Pure Lead Motive
+  if (clean.startsWith("DT")) return 8;                                   // Flooded Deep Cycle
+  if (clean.startsWith("AGM-")) return 9;                                // Automotive AGM
+  if (clean.startsWith("PLS")) return 10;                                // Marine
+  if (clean.match(/^(MX|LMX|EB|LBX|LB)/)) return 11;                     // Power Sports
+
+  return 99; // Anything unknown goes last
+}
+
+/* ================================
+   LOAD CSV
+================================ */
 fetch("Inventory.csv")
   .then(res => res.text())
   .then(text => {
+
     const lines = text
       .split("\n")
       .map(l => l.trim())
       .filter(l => l.length);
 
-    // --- Extract date from anywhere ---
+    /* ----- Extract Date ----- */
     const dateLine = lines.find(l => l.includes("Inventory List"));
     if (dateLine) {
       const dateMatch = dateLine.match(/(\d{2}\/\d{2}\/\d{4})/);
@@ -143,7 +197,7 @@ fetch("Inventory.csv")
       }
     }
 
-    // --- Find header row (contains "Material") ---
+    /* ----- Find Header Row ----- */
     const headerIndex = lines.findIndex(l => l.includes("Material"));
     if (headerIndex === -1) return;
 
@@ -155,11 +209,11 @@ fetch("Inventory.csv")
     const locationIdx = headers.indexOf("Sto.Loction");
     const qtyIdx      = headers.indexOf("Qty.Avail");
 
-    const tbody = document.querySelector("#inventoryTable tbody");
-    tbody.innerHTML = "";
+    let inventoryData = [];
 
-     /* ----- Parse Data Rows ----- */
+    /* ----- Parse Data Rows ----- */
     lines.slice(headerIndex + 1).forEach(line => {
+
       let cols = parseCSVLine(line);
       while (cols.length && cols[0] === "") cols.shift();
 
@@ -175,14 +229,51 @@ fetch("Inventory.csv")
 
       if (!Number.isFinite(qty) || qty <= 0) return;
 
-      locations.add(location);
+      const voltage = extractVoltage(part);
+      const groupPriority = getGroupPriority(part);
 
+      inventoryData.push({
+        material,
+        part,
+        location,
+        qty,
+        voltage,
+        groupPriority
+      });
+
+      locations.add(location);
+    });
+
+    /* ================================
+       SORTING (PDF STYLE)
+       1. Group
+       2. Voltage Low → High
+       3. Part Number
+    ================================= */
+    inventoryData.sort((a, b) => {
+
+      if (a.groupPriority !== b.groupPriority) {
+        return a.groupPriority - b.groupPriority;
+      }
+
+      if (a.voltage !== b.voltage) {
+        return a.voltage - b.voltage;
+      }
+
+      return normalizePart(a.part).localeCompare(normalizePart(b.part));
+    });
+
+    /* ----- Render Table ----- */
+    const tbody = document.querySelector("#inventoryTable tbody");
+    tbody.innerHTML = "";
+
+    inventoryData.forEach(item => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${material}</td>
-        <td>${part}</td>
-        <td>${location}</td>
-        <td>${qty.toLocaleString()}</td>
+        <td>${item.material}</td>
+        <td>${item.part}</td>
+        <td>${item.location}</td>
+        <td>${item.qty.toLocaleString()}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -190,6 +281,9 @@ fetch("Inventory.csv")
     populateLocationDropdown();
   });
 
+/* ================================
+   LOCATION DROPDOWN
+================================ */
 function populateLocationDropdown() {
   const select = document.getElementById("locationFilter");
   select.innerHTML = `<option value="">All Locations</option>`;
@@ -204,6 +298,9 @@ function populateLocationDropdown() {
     });
 }
 
+/* ================================
+   SEARCH + FILTER
+================================ */
 function applyFilters() {
   const search = document.getElementById("search").value.toUpperCase();
   const loc    = document.getElementById("locationFilter").value;
