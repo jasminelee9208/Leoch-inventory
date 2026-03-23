@@ -100,213 +100,122 @@
   <tbody></tbody>
 </table>
 
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
 <script>
 const locations = new Set();
 
-/* ================================
-   CSV PARSER
-================================ */
-function parseCSVLine(line) {
-  const result = [];
-  let current = "";
-  let inQuotes = false;
+// ✅ FINAL location mapping
+const locationMap = {
+  "U001": "Lake Forest, CA",
+  "U008": "CA AGED",
+  "U009": "TX AGED",
+  "U024": "Dallas, TX"
+};
 
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
+// ✅ Only keep these locations
+const allowedLocations = new Set(["U001","U008","U009","U024"]);
 
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === "," && !inQuotes) {
-      result.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
+async function loadExcel(file) {
+  const res = await fetch(file + "?v=" + Date.now());
+  const data = await res.arrayBuffer();
+
+  const workbook = XLSX.read(data);
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+  return XLSX.utils.sheet_to_json(sheet);
+}
+
+async function loadInventory() {
+
+  const files = ["N010.xlsx", "N050.xlsx"];
+  const grouped = {};
+
+  for (const file of files) {
+
+    const rows = await loadExcel(file);
+
+    rows.forEach(row => {
+
+      const material = row["Material"];
+      const part = row["Leoch Part Number"];
+      const loc = row["Sto.Loction"];
+      const qty = parseFloat(row["Qty.Avail"]);
+
+      // ✅ FILTER
+      if (!allowedLocations.has(loc)) return;
+      if (!qty || qty <= 0) return;
+
+      // ✅ GROUP KEY (material + location)
+      const key = material + "|" + loc;
+
+      if (!grouped[key]) {
+        grouped[key] = {
+          material,
+          part,
+          location: locationMap[loc],
+          qty: 0
+        };
+      }
+
+      // ✅ SUM QTY
+      grouped[key].qty += qty;
+    });
   }
 
-  result.push(current);
-  return result.map(v => v.trim());
+  renderTable(grouped);
 }
 
-/* ================================
-   NORMALIZE PART NUMBER
-   (removes terminals like (T8))
-================================ */
-function normalizePart(part) {
-  if (!part) return "";
-  return part
-    .toUpperCase()
-    .replace(/\(.*?\)/g, "")   // remove anything in ()
-    .replace(/\s+/g, "")       // remove spaces
-    .trim();
-}
+function renderTable(grouped) {
 
-/* ================================
-   EXTRACT VOLTAGE
-   Works for LP6-..., LP12-..., LDC8-..., etc.
-================================ */
-function extractVoltage(part) {
-  const clean = normalizePart(part);
+  const tbody = document.querySelector("#inventoryTable tbody");
+  tbody.innerHTML = "";
 
-  const match = clean.match(/[A-Z]+(\d+)-/);
-  if (match) return parseFloat(match[1]);
+  Object.values(grouped)
+    .sort((a, b) => a.part.localeCompare(b.part)) // 🔥 auto sort
+    .forEach(item => {
 
-  return 0;
-}
+      locations.add(item.location);
 
-/* ================================
-   GROUP ORDER (MATCHES YOUR PDF)
-================================ */
-function getGroupPriority(part) {
-  const clean = normalizePart(part);
-
-  if (clean.startsWith("LP") || clean.startsWith("LPL")) return 1;       // General Purpose
-  if (clean.startsWith("LDC")) return 2;                                 // Deep Cycle AGM
-  if (clean.startsWith("LPX") || clean.startsWith("XP") || clean.startsWith("HXP")) return 3; // High Rate UPS
-  if (clean.startsWith("PLC")) return 4;                                 // Pure Lead + Carbon
-  if (clean.startsWith("LPF")) return 5;                                 // AGM Front Terminal
-  if (clean.startsWith("PLH")) return 6;                                 // Pure Lead Long Life
-  if (clean.startsWith("PLF")) return 7;                                 // Pure Lead Motive
-  if (clean.startsWith("DT")) return 8;                                   // Flooded Deep Cycle
-  if (clean.startsWith("AGM-")) return 9;                                // Automotive AGM
-  if (clean.startsWith("PLS")) return 10;                                // Marine
-  if (clean.match(/^(MX|LMX|EB|LBX|LB)/)) return 11;                     // Power Sports
-
-  return 99; // Anything unknown goes last
-}
-
-/* ================================
-   LOAD CSV
-================================ */
-fetch("Inventory.csv")
-  .then(res => res.text())
-  .then(text => {
-
-    const lines = text
-      .split("\n")
-      .map(l => l.trim())
-      .filter(l => l.length);
-
-    /* ----- Extract Date ----- */
-    const dateLine = lines.find(l => l.includes("Inventory List"));
-    if (dateLine) {
-      const dateMatch = dateLine.match(/(\d{2}\/\d{2}\/\d{4})/);
-      if (dateMatch) {
-        document.getElementById("lastUpdated").innerText =
-          "Last updated: " + dateMatch[1];
-      }
-    }
-
-    /* ----- Find Header Row ----- */
-    const headerIndex = lines.findIndex(l => l.includes("Material"));
-    if (headerIndex === -1) return;
-
-    let headers = parseCSVLine(lines[headerIndex]);
-    while (headers[0] === "") headers.shift();
-
-    const materialIdx = headers.indexOf("Material");
-    const partIdx     = headers.indexOf("Leoch Part Number");
-    const locationIdx = headers.indexOf("Sto.Loction");
-    const qtyIdx      = headers.indexOf("Qty.Avail");
-
-    let inventoryData = [];
-
-    /* ----- Parse Data Rows ----- */
-    lines.slice(headerIndex + 1).forEach(line => {
-
-      let cols = parseCSVLine(line);
-      while (cols.length && cols[0] === "") cols.shift();
-
-      const material = cols[materialIdx];
-      const part     = cols[partIdx];
-      const location = cols[locationIdx];
-
-      let qty = cols[qtyIdx]
-        ?.replace(/"/g, "")
-        .replace(/,/g, "");
-
-      qty = parseFloat(qty);
-
-      if (!Number.isFinite(qty) || qty <= 0) return;
-
-      const voltage = extractVoltage(part);
-      const groupPriority = getGroupPriority(part);
-
-      inventoryData.push({
-        material,
-        part,
-        location,
-        qty,
-        voltage,
-        groupPriority
-      });
-
-      locations.add(location);
-    });
-
-    /* ================================
-       SORTING (PDF STYLE)
-       1. Group
-       2. Voltage Low → High
-       3. Part Number
-    ================================= */
-    inventoryData.sort((a, b) => {
-
-      if (a.groupPriority !== b.groupPriority) {
-        return a.groupPriority - b.groupPriority;
-      }
-
-      if (a.voltage !== b.voltage) {
-        return a.voltage - b.voltage;
-      }
-
-      return normalizePart(a.part).localeCompare(normalizePart(b.part));
-    });
-
-    /* ----- Render Table ----- */
-    const tbody = document.querySelector("#inventoryTable tbody");
-    tbody.innerHTML = "";
-
-    inventoryData.forEach(item => {
       const tr = document.createElement("tr");
+
       tr.innerHTML = `
         <td>${item.material}</td>
         <td>${item.part}</td>
         <td>${item.location}</td>
         <td>${item.qty.toLocaleString()}</td>
       `;
+
       tbody.appendChild(tr);
     });
 
-    populateLocationDropdown();
-  });
-
-/* ================================
-   LOCATION DROPDOWN
-================================ */
-function populateLocationDropdown() {
-  const select = document.getElementById("locationFilter");
-  select.innerHTML = `<option value="">All Locations</option>`;
-
-  Array.from(locations)
-    .sort()
-    .forEach(loc => {
-      const opt = document.createElement("option");
-      opt.value = loc;
-      opt.textContent = loc;
-      select.appendChild(opt);
-    });
+  populateLocationDropdown();
 }
 
-/* ================================
-   SEARCH + FILTER
-================================ */
+function populateLocationDropdown() {
+
+  const select = document.getElementById("locationFilter");
+
+  select.innerHTML = `<option value="">All Locations</option>`;
+
+  Array.from(locations).sort().forEach(loc => {
+
+    const opt = document.createElement("option");
+    opt.value = loc;
+    opt.textContent = loc;
+
+    select.appendChild(opt);
+  });
+}
+
 function applyFilters() {
+
   const search = document.getElementById("search").value.toUpperCase();
-  const loc    = document.getElementById("locationFilter").value;
+  const loc = document.getElementById("locationFilter").value;
 
   document.querySelectorAll("#inventoryTable tbody tr")
     .forEach(row => {
+
       const part = row.cells[1].innerText.toUpperCase();
       const rowLoc = row.cells[2].innerText;
 
@@ -317,6 +226,8 @@ function applyFilters() {
       row.classList.toggle("hidden", !show);
     });
 }
+
+loadInventory();
 </script>
 
 
