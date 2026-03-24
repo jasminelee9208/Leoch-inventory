@@ -138,6 +138,7 @@ async function loadInventory() {
     rows.forEach(row => {
 
       const material = row["Material"];
+      if (!material || (!material.startsWith("10") && !material.startsWith("11"))) return;
       const part = row["Leoch Part Number"];
       const loc = row["Sto.Loction"];
       const qty = parseFloat(row["Qty.Avail"]);
@@ -227,7 +228,21 @@ function applyFilters() {
     });
 }
 
+  function setLastUpdated() {
+  const now = new Date();
+
+  const formatted =
+    String(now.getMonth() + 1).padStart(2, '0') + "/" +
+    String(now.getDate()).padStart(2, '0') + "/" +
+    now.getFullYear();
+
+  document.getElementById("lastUpdated").innerText =
+    "Last updated: " + formatted;
+}
+  
 loadInventory();
+renderTable(grouped);
+setLastUpdated();
 </script>
 
 
