@@ -105,7 +105,7 @@
 <script>
 const locations = new Set();
 
-// ✅ FINAL location mapping
+// FINAL location mapping
 const locationMap = {
   "U001": "Lake Forest, CA",
   "U008": "CA AGED",
@@ -113,7 +113,7 @@ const locationMap = {
   "U024": "Dallas, TX"
 };
 
-// ✅ Only keep these locations
+// Only keep these locations
 const allowedLocations = new Set(["U001","U008","U009","U024"]);
 
 async function loadExcel(file) {
@@ -128,7 +128,7 @@ async function loadExcel(file) {
 
 async function loadInventory() {
 
-  const files = ["N010.xlsx", "N050.xlsx"];
+  const files = ["N010.xlsx"];
   const grouped = {};
 
   for (const file of files) {
@@ -143,11 +143,11 @@ async function loadInventory() {
       const loc = row["Sto.Loction"];
       const qty = parseFloat(row["Qty.Avail"]);
 
-      // ✅ FILTER
+      // FILTER
       if (!allowedLocations.has(loc)) return;
       if (!qty || qty <= 0) return;
 
-      // ✅ GROUP KEY (material + location)
+      // GROUP KEY (material + location)
       const key = material + "|" + loc;
 
       if (!grouped[key]) {
@@ -159,7 +159,7 @@ async function loadInventory() {
         };
       }
 
-      // ✅ SUM QTY
+      // SUM QTY
       grouped[key].qty += qty;
     });
   }
@@ -173,7 +173,7 @@ function renderTable(grouped) {
   tbody.innerHTML = "";
 
   Object.values(grouped)
-    .sort((a, b) => a.part.localeCompare(b.part)) // 🔥 auto sort
+    .sort((a, b) => a.part.localeCompare(b.part)) // auto sort
     .forEach(item => {
 
       locations.add(item.location);
