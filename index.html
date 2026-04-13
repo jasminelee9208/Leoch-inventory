@@ -167,6 +167,41 @@ async function loadInventory() {
   renderTable(grouped);
 }
 
+async function setLastUpdatedFromGitHub() {
+
+  const repo = "jasminelee9208?tab=repositories"; // <-- change this
+  const files = ["N010.xlsx", "N050.xlsx"];
+
+  let latestDate = null;
+
+  for (const file of files) {
+
+    const res = await fetch(
+      `https://api.github.com/repos/${repo}/commits?path=${file}&page=1&per_page=1`
+    );
+
+    const data = await res.json();
+
+    if (data.length > 0) {
+      const commitDate = new Date(data[0].commit.committer.date);
+
+      if (!latestDate || commitDate > latestDate) {
+        latestDate = commitDate;
+      }
+    }
+  }
+
+  if (latestDate) {
+    const formatted =
+      String(latestDate.getMonth() + 1).padStart(2, '0') + "/" +
+      String(latestDate.getDate()).padStart(2, '0') + "/" +
+      latestDate.getFullYear();
+
+    document.getElementById("lastUpdated").innerText =
+      "Last updated: " + formatted;
+  }
+}
+
 function renderTable(grouped) {
 
   const tbody = document.querySelector("#inventoryTable tbody");
@@ -242,7 +277,7 @@ function applyFilters() {
   
 loadInventory();
 renderTable(grouped);
-setLastUpdated();
+setLastUpdatedFromGitHub();
 </script>
 
 
