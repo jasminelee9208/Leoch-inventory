@@ -5,13 +5,14 @@
   <title>Leoch Inventory</title>
 
   <style>
+    /* Basic page style */
     body {
       font-family: Arial, sans-serif;
       margin: 20px;
       padding: 5px;
     }
 
-    /* Header */
+    /* Header area */
     .header {
       display: flex;
       align-items: center;
@@ -24,14 +25,16 @@
 
     .header h2 {
       margin: 0;
-      font-size: 32px
+      font-size: 32px;
     }
-    
+
+    /* Last updated text */
     #lastUpdated {
       color: #666;
       margin-bottom: 15px;
     }
 
+    /* Search and dropdown area */
     .filters {
       margin-bottom: 15px;
     }
@@ -42,6 +45,7 @@
       margin-right: 5px;
     }
 
+    /* Table style */
     table {
       border-collapse: collapse;
       width: 80%;
@@ -57,6 +61,7 @@
       background: #f2f2f2;
     }
 
+    /* Hide rows when filtered out */
     tr.hidden {
       display: none;
     }
@@ -65,222 +70,233 @@
 
 <body>
 
-<!-- Header with Logo -->
-<div class="header">
-  <img src="logo.png" alt="Leoch Logo" class="logo">
-  <h2>Leoch Inventory</h2>
-</div>
-  
-<p id="lastUpdated"></p>
+  <!-- Header with logo -->
+  <div class="header">
+    <img src="logo.png" alt="Leoch Logo" class="logo">
+    <h2>Leoch Inventory</h2>
+  </div>
 
-<div class="filters">
-<!-- Search box -->
-  <input
-    type="text"
-    id="search"
-    placeholder="Search by part number..."
-    onkeyup="applyFilters()"
-  >
+  <!-- Last update date from GitHub -->
+  <p id="lastUpdated"></p>
 
-<!-- Location dropdown -->
-  <select id="locationFilter" onchange="applyFilters()">
-    <option value="">All Locations</option>
-  </select>
-</div>
+  <!-- Search box and location filter -->
+  <div class="filters">
+    <input
+      type="text"
+      id="search"
+      placeholder="Search by part number..."
+      onkeyup="applyFilters()"
+    >
 
-<table id="inventoryTable">
-  <thead>
-    <tr>
-      <th>Material</th>
-      <th>Part Number</th>
-      <th>Location</th>
-      <th>Available Qty</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
+    <select id="locationFilter" onchange="applyFilters()">
+      <option value="">All Locations</option>
+    </select>
+  </div>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <!-- Inventory table -->
+  <table id="inventoryTable">
+    <thead>
+      <tr>
+        <th>Material</th>
+        <th>Part Number</th>
+        <th>Location</th>
+        <th>Available Qty</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 
-<script>
-const locations = new Set();
+  <!-- Excel reader library -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
-// FINAL location mapping
-const locationMap = {
-  "U001": "Lake Forest, CA",
-  "U008": "CA AGED",
-  "U009": "TX AGED",
-  "U024": "Dallas, TX"
-};
+  <script>
+    /* Store displayed locations for dropdown */
+    const locations = new Set();
 
-// Only keep these locations
-const allowedLocations = new Set(["U001","U008","U009","U024"]);
+    /* Convert SAP location codes to website names */
+    const locationMap = {
+      "U001": "Lake Forest, CA",
+      "U008": "CA AGED",
+      "U009": "TX AGED",
+      "U024": "Dallas, TX"
+    };
 
-async function loadExcel(file) {
-  const res = await fetch(file + "?v=" + Date.now());
-  const data = await res.arrayBuffer();
+    /* Only keep these SAP locations */
+    const allowedLocations = new Set(["U001", "U008", "U009", "U024"]);
 
-  const workbook = XLSX.read(data);
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    /* Load one Excel file from GitHub */
+    async function loadExcel(file) {
+      const res = await fetch(file + "?v=" + Date.now());
+      const data = await res.arrayBuffer();
 
-  return XLSX.utils.sheet_to_json(sheet);
-}
+      const workbook = XLSX.read(data);
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-async function loadInventory() {
+      return XLSX.utils.sheet_to_json(sheet);
+    }
 
-  const files = ["N010.xlsx"];
-  const grouped = {};
+    /* Read inventory data, filter it, group it, and show it */
+    async function loadInventory() {
+      const files = ["N010.xlsx"];
+      const grouped = {};
 
-  for (const file of files) {
+      for (const file of files) {
+        const rows = await loadExcel(file);
 
-    const rows = await loadExcel(file);
+        rows.forEach(row => {
+          /* Get needed columns from SAP */
+          const material = String(row["Material"] || "").trim();
+          const part = String(row["Leoch Part Number"] || "").trim();
+          const loc = String(row["Sto.Loction"] || "").trim();
+          const qty = parseFloat(row["Qty.Avail"]);
 
-    rows.forEach(row => {
+          /* Keep only material codes starting with 10 or 11 */
+          if (!material || (!material.startsWith("10") && !material.startsWith("11"))) {
+            return;
+          }
 
-      const material = row["Material"];
-      if (!material || (!material.startsWith("10") && !material.startsWith("11"))) return;
-      const part = row["Leoch Part Number"];
-      const loc = row["Sto.Loction"];
-      const qty = parseFloat(row["Qty.Avail"]);
+          /* Remove blank part numbers and part numbers starting with BRACKET */
+          if (!part || part.toUpperCase().startsWith("BRACKET")) {
+            return;
+          }
 
-      // FILTER
-      if (!allowedLocations.has(loc)) return;
-      if (!qty || qty <= 0) return;
+          /* Keep only selected locations */
+          if (!allowedLocations.has(loc)) {
+            return;
+          }
 
-      // GROUP KEY (material + location)
-      const key = material + "|" + loc;
+          /* Keep only rows with quantity greater than 0 */
+          if (!Number.isFinite(qty) || qty <= 0) {
+            return;
+          }
 
-      if (!grouped[key]) {
-        grouped[key] = {
-          material,
-          part,
-          location: locationMap[loc],
-          qty: 0
-        };
+          /* Group rows by material + location */
+          const key = material + "|" + loc;
+
+          if (!grouped[key]) {
+            grouped[key] = {
+              material: material,
+              part: part,
+              location: locationMap[loc] || loc,
+              qty: 0
+            };
+          }
+
+          /* Add quantity together for grouped rows */
+          grouped[key].qty += qty;
+        });
       }
 
-      // SUM QTY
-      grouped[key].qty += qty;
-    });
-  }
+      renderTable(grouped);
+    }
 
-  renderTable(grouped);
-}
+    /* Get real file update date from GitHub commit history */
+    async function setLastUpdatedFromGitHub() {
+      const repo = "jasminelee9208/Leoch-inventory";
+      const files = ["N010.xlsx"];
 
-async function setLastUpdatedFromGitHub() {
+      let latestDate = null;
 
-  const repo = "jasminelee9208?tab=repositories"; // <-- change this
-  const files = ["N010.xlsx", "N050.xlsx"];
+      for (const file of files) {
+        const res = await fetch(
+          `https://api.github.com/repos/${repo}/commits?path=${encodeURIComponent(file)}&page=1&per_page=1`
+        );
 
-  let latestDate = null;
+        if (!res.ok) {
+          console.error("GitHub API error for file:", file, res.status);
+          continue;
+        }
 
-  for (const file of files) {
+        const data = await res.json();
 
-    const res = await fetch(
-      `https://api.github.com/repos/${repo}/commits?path=${file}&page=1&per_page=1`
-    );
+        if (Array.isArray(data) && data.length > 0) {
+          const commitDate = new Date(data[0].commit.committer.date);
 
-    const data = await res.json();
+          if (!latestDate || commitDate > latestDate) {
+            latestDate = commitDate;
+          }
+        }
+      }
 
-    if (data.length > 0) {
-      const commitDate = new Date(data[0].commit.committer.date);
+      const el = document.getElementById("lastUpdated");
 
-      if (!latestDate || commitDate > latestDate) {
-        latestDate = commitDate;
+      if (latestDate) {
+        const formatted =
+          String(latestDate.getMonth() + 1).padStart(2, "0") + "/" +
+          String(latestDate.getDate()).padStart(2, "0") + "/" +
+          latestDate.getFullYear();
+
+        el.innerText = "Last updated: " + formatted;
+      } else {
+        el.innerText = "Last updated: unavailable";
       }
     }
-  }
 
-  if (latestDate) {
-    const formatted =
-      String(latestDate.getMonth() + 1).padStart(2, '0') + "/" +
-      String(latestDate.getDate()).padStart(2, '0') + "/" +
-      latestDate.getFullYear();
+    /* Show grouped inventory data in the table */
+    function renderTable(grouped) {
+      const tbody = document.querySelector("#inventoryTable tbody");
+      tbody.innerHTML = "";
+      locations.clear();
 
-    document.getElementById("lastUpdated").innerText =
-      "Last updated: " + formatted;
-  }
-}
+      Object.values(grouped)
+        .sort((a, b) => a.part.localeCompare(b.part))
+        .forEach(item => {
+          locations.add(item.location);
 
-function renderTable(grouped) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${item.material}</td>
+            <td>${item.part}</td>
+            <td>${item.location}</td>
+            <td>${item.qty.toLocaleString()}</td>
+          `;
 
-  const tbody = document.querySelector("#inventoryTable tbody");
-  tbody.innerHTML = "";
+          tbody.appendChild(tr);
+        });
 
-  Object.values(grouped)
-    .sort((a, b) => a.part.localeCompare(b.part)) // auto sort
-    .forEach(item => {
+      populateLocationDropdown();
+    }
 
-      locations.add(item.location);
+    /* Fill the location dropdown based on shown data */
+    function populateLocationDropdown() {
+      const select = document.getElementById("locationFilter");
+      select.innerHTML = `<option value="">All Locations</option>`;
 
-      const tr = document.createElement("tr");
+      Array.from(locations)
+        .sort()
+        .forEach(loc => {
+          const opt = document.createElement("option");
+          opt.value = loc;
+          opt.textContent = loc;
+          select.appendChild(opt);
+        });
+    }
 
-      tr.innerHTML = `
-        <td>${item.material}</td>
-        <td>${item.part}</td>
-        <td>${item.location}</td>
-        <td>${item.qty.toLocaleString()}</td>
-      `;
+    /* Filter table by part number search and location dropdown */
+    function applyFilters() {
+      const search = document.getElementById("search").value.toUpperCase();
+      const loc = document.getElementById("locationFilter").value;
 
-      tbody.appendChild(tr);
-    });
+      document.querySelectorAll("#inventoryTable tbody tr").forEach(row => {
+        const part = row.cells[1].innerText.toUpperCase();
+        const rowLoc = row.cells[2].innerText;
 
-  populateLocationDropdown();
-}
+        const show =
+          part.includes(search) &&
+          (!loc || rowLoc === loc);
 
-function populateLocationDropdown() {
+        row.classList.toggle("hidden", !show);
+      });
+    }
 
-  const select = document.getElementById("locationFilter");
+    /* Start page load */
+    async function init() {
+      await loadInventory();
+      await setLastUpdatedFromGitHub();
+    }
 
-  select.innerHTML = `<option value="">All Locations</option>`;
-
-  Array.from(locations).sort().forEach(loc => {
-
-    const opt = document.createElement("option");
-    opt.value = loc;
-    opt.textContent = loc;
-
-    select.appendChild(opt);
-  });
-}
-
-function applyFilters() {
-
-  const search = document.getElementById("search").value.toUpperCase();
-  const loc = document.getElementById("locationFilter").value;
-
-  document.querySelectorAll("#inventoryTable tbody tr")
-    .forEach(row => {
-
-      const part = row.cells[1].innerText.toUpperCase();
-      const rowLoc = row.cells[2].innerText;
-
-      const show =
-        part.includes(search) &&
-        (!loc || rowLoc === loc);
-
-      row.classList.toggle("hidden", !show);
-    });
-}
-
-  function setLastUpdated() {
-  const now = new Date();
-
-  const formatted =
-    String(now.getMonth() + 1).padStart(2, '0') + "/" +
-    String(now.getDate()).padStart(2, '0') + "/" +
-    now.getFullYear();
-
-  document.getElementById("lastUpdated").innerText =
-    "Last updated: " + formatted;
-}
-  
-loadInventory();
-renderTable(grouped);
-setLastUpdatedFromGitHub();
-</script>
-
-
+    init();
+  </script>
 
 </body>
 </html>
